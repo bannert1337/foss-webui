@@ -34,7 +34,16 @@
 	import EyeSlash from '$lib/components/icons/EyeSlash.svelte';
 	import Eye from '$lib/components/icons/Eye.svelte';
 
+	import BulkActionsPanel from '$lib/components/admin/Settings/Models/BulkActionsPanel.svelte';
+
 	let shiftKey = false;
+	let bulkEditMode = false;
+	let selectedModelIds = [];
+	let allModelsSelected = false;
+
+	$: allModelsSelected =
+		filteredModels.length > 0 &&
+		filteredModels.every((model) => selectedModelIds.includes(model.id));
 
 	let importFiles;
 	let modelsImportInputElement: HTMLInputElement;
@@ -224,6 +233,17 @@
 
 {#if models !== null}
 	{#if selectedModelId === null}
+		{#if bulkEditMode}
+			{#if selectedModelIds.length > 0}
+				<BulkActionsPanel
+					{selectedModelIds}
+					onActionComplete={() => {
+						selectedModelIds = [];
+						init();
+					}}
+				/>
+			{/if}
+		{/if}
 		<div class="flex flex-col gap-1 mt-1.5 mb-2">
 			<div class="flex justify-between items-center">
 				<div class="flex items-center md:self-center text-xl font-medium px-0.5">
@@ -258,6 +278,45 @@
 							<Cog6 />
 						</button>
 					</Tooltip>
+
+					<Tooltip content={$i18n.t('Bulk Edit Mode')}>
+						<button
+							class=" p-1 rounded-full flex gap-1 items-center"
+							type="button"
+							on:click={() => {
+								bulkEditMode = !bulkEditMode;
+								if (!bulkEditMode) {
+									selectedModelIds = [];
+								}
+							}}
+						>
+							{#if bulkEditMode}
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="currentColor"
+									class="w-5 h-5"
+								>
+									<path
+										fill-rule="evenodd"
+										d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z"
+										clip-rule="evenodd"
+									/>
+								</svg>
+							{:else}
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="currentColor"
+									class="w-5 h-5"
+								>
+									<path
+										d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z"
+									/>
+								</svg>
+							{/if}
+						</button>
+					</Tooltip>
 				</div>
 			</div>
 
@@ -273,23 +332,52 @@
 					/>
 				</div>
 			</div>
+			{#if bulkEditMode}
+				<div class="flex items-center gap-2 mt-2">
+					<input
+						type="checkbox"
+						class="checkbox"
+						on:change={(e) => {
+							if (e.target.checked) {
+								selectedModelIds = filteredModels.map((model) => model.id);
+							} else {
+								selectedModelIds = [];
+							}
+						}}
+						checked={filteredModels.length > 0 && allModelsSelected}
+					/>
+					<label class="text-sm text-gray-500 dark:text-gray-300">{$i18n.t('Select All')}</label>
+				</div>
+			{/if}
 		</div>
 
 		<div class=" my-2 mb-5" id="model-list">
 			{#if models.length > 0}
 				{#each filteredModels as model, modelIdx (model.id)}
 					<div
-						class=" flex space-x-4 cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-lg transition {model
+						class=" flex space-x-4 w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-lg transition {model
 							?.meta?.hidden
 							? 'opacity-50 dark:opacity-50'
 							: ''}"
 						id="model-item-{model.id}"
 					>
+						{#if bulkEditMode}
+							<div class="self-center">
+								<input
+									type="checkbox"
+									class="checkbox"
+									value={model.id}
+									bind:group={selectedModelIds}
+								/>
+							</div>
+						{/if}
 						<button
 							class=" flex flex-1 text-left space-x-3.5 cursor-pointer w-full"
 							type="button"
 							on:click={() => {
-								selectedModelId = model.id;
+								if (!bulkEditMode) {
+									selectedModelId = model.id;
+								}
 							}}
 						>
 							<div class=" self-center w-8">
@@ -332,77 +420,81 @@
 							</div>
 						</button>
 						<div class="flex flex-row gap-0.5 items-center self-center">
-							{#if shiftKey}
-								<Tooltip content={model?.meta?.hidden ? $i18n.t('Show') : $i18n.t('Hide')}>
+							{#if !bulkEditMode}
+								{#if shiftKey}
+									<Tooltip content={model?.meta?.hidden ? $i18n.t('Show') : $i18n.t('Hide')}>
+										<button
+											class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+											type="button"
+											on:click={() => {
+												hideModelHandler(model);
+											}}
+										>
+											{#if model?.meta?.hidden}
+												<EyeSlash />
+											{:else}
+												<Eye />
+											{/if}
+										</button>
+									</Tooltip>
+								{:else}
 									<button
 										class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 										type="button"
 										on:click={() => {
-											hideModelHandler(model);
+											selectedModelId = model.id;
 										}}
 									>
-										{#if model?.meta?.hidden}
-											<EyeSlash />
-										{:else}
-											<Eye />
-										{/if}
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke-width="1.5"
+											stroke="currentColor"
+											class="w-4 h-4"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
+											/>
+										</svg>
 									</button>
-								</Tooltip>
-							{:else}
-								<button
-									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-									type="button"
-									on:click={() => {
-										selectedModelId = model.id;
-									}}
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-4 h-4"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-										/>
-									</svg>
-								</button>
 
-								<ModelMenu
-									user={$user}
-									{model}
-									exportHandler={() => {
-										exportModelHandler(model);
-									}}
-									hideHandler={() => {
-										hideModelHandler(model);
-									}}
-									onClose={() => {}}
-								>
-									<button
-										class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-										type="button"
+									<ModelMenu
+										user={$user}
+										{model}
+										exportHandler={() => {
+											exportModelHandler(model);
+										}}
+										hideHandler={() => {
+											hideModelHandler(model);
+										}}
+										onClose={() => {}}
 									>
-										<EllipsisHorizontal className="size-5" />
-									</button>
-								</ModelMenu>
+										<button
+											class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+											type="button"
+										>
+											<EllipsisHorizontal className="size-5" />
+										</button>
+									</ModelMenu>
 
-								<div class="ml-1">
-									<Tooltip
-										content={(model?.is_active ?? true) ? $i18n.t('Enabled') : $i18n.t('Disabled')}
-									>
-										<Switch
-											bind:state={model.is_active}
-											on:change={async () => {
-												toggleModelHandler(model);
-											}}
-										/>
-									</Tooltip>
-								</div>
+									<div class="ml-1">
+										<Tooltip
+											content={(model?.is_active ?? true)
+												? $i18n.t('Enabled')
+												: $i18n.t('Disabled')}
+										>
+											<Switch
+												bind:state={model.is_active}
+												on:change={async () => {
+													toggleModelHandler(model);
+												}}
+											/>
+										</Tooltip>
+									</div>
+								{/if}
 							{/if}
 						</div>
 					</div>
