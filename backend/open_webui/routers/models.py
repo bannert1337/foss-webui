@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, Union
+from pydantic import BaseModel
 
 from open_webui.models.models import (
     ModelForm,
@@ -8,7 +9,7 @@ from open_webui.models.models import (
     Models,
 )
 from open_webui.constants import ERROR_MESSAGES
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Body
 
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
@@ -16,6 +17,16 @@ from open_webui.utils.access_control import has_access, has_permission
 
 
 router = APIRouter()
+
+
+class BulkToggleModelsForm(BaseModel):
+    ids: list[str]
+    active: bool
+
+
+class BulkUpdateModelsForm(BaseModel):
+    ids: list[str]
+    updates: dict
 
 
 ###########################
@@ -167,6 +178,66 @@ async def update_model_by_id(
 
     model = Models.update_model_by_id(id, form_data)
     return model
+
+
+############################
+# BulkToggleModels
+############################
+
+
+@router.post("/models/bulk/toggle")
+async def bulk_toggle_models(
+    form_data: BulkToggleModelsForm, user=Depends(get_admin_user)
+):
+    updated_count = 0
+    for model_id in form_data.ids:
+        model = Models.get_model_by_id(model_id)
+        if model:
+            model.is_active = form_data.active
+            Models.update_model(model)
+            updated_count += 1
+    return {"message": f"Successfully toggled {updated_count} models."}
+
+
+############################
+# BulkUpdateModels
+############################
+
+
+@router.post("/models/bulk/update")
+async def bulk_update_models(
+    form_data: BulkUpdateModelsForm, user=Depends(get_admin_user)
+):
+    updated_count = 0
+    for model_id in form_data.ids:
+        model = Models.get_model_by_id(model_id)
+        if model:
+            if "meta" in form_data.updates:
+                model.meta.update(form_data.updates["meta"])
+
+            if "capabilities" in form_data.updates and "meta" in form_data.updates:
+                if "capabilities" not in model.meta:
+                    model.meta["capabilities"] = []
+                model.meta["capabilities"].extend(form_data.updates["capabilities"])
+                model.meta["capabilities"] = list(set(model.meta["capabilities"]))
+
+            if "tags" in form_data.updates:
+                if "tag_action" in form_data.updates:
+                    if form_data.updates["tag_action"] == "add":
+                        if "tags" not in model.meta:
+                            model.meta["tags"] = []
+                        for new_tag in form_data.updates["tags"]:
+                            if new_tag not in model.meta["tags"]:
+                                model.meta["tags"].append(new_tag)
+                    elif form_data.updates["tag_action"] == "remove":
+                        model.meta["tags"] = [
+                            tag
+                            for tag in model.meta["tags"]
+                            if tag not in form_data.updates["tags"]
+                        ]
+            Models.update_model(model)
+            updated_count += 1
+    return {"message": f"Successfully updated {updated_count} models."}
 
 
 ############################
