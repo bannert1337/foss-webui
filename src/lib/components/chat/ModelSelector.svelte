@@ -2,7 +2,7 @@
 	import { models, showSettings, settings, user, mobile, config } from '$lib/stores';
 	import { onMount, tick, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import Selector from './ModelSelector/Selector.svelte';
+	import OptimizedSelector from './ModelSelector/OptimizedSelector.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 
 	import { updateUserSettings } from '$lib/apis/users';
@@ -37,7 +37,7 @@
 		<div class="flex w-full max-w-fit">
 			<div class="overflow-hidden w-full">
 				<div class="mr-1 max-w-full">
-					<Selector
+					<OptimizedSelector
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
 						items={$models.map((model) => ({
