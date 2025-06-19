@@ -6,14 +6,18 @@
 
 	let popupElement = null;
 
+	// Use transform instead of top/left for better performance
+	$: transformStyle = `transform: translate3d(${x + 10}px, ${y + 10}px, 0)`;
+
 	onMount(() => {
 		document.body.appendChild(popupElement);
-		document.body.style.overflow = 'hidden';
+		// Don't set overflow: hidden as it's not necessary and causes layout shifts
 	});
 
 	onDestroy(() => {
-		document.body.removeChild(popupElement);
-		document.body.style.overflow = 'unset';
+		if (popupElement && popupElement.parentNode) {
+			document.body.removeChild(popupElement);
+		}
 	});
 </script>
 
@@ -24,7 +28,7 @@
 	bind:this={popupElement}
 	class="fixed top-0 left-0 w-screen h-[100dvh] z-50 touch-none pointer-events-none"
 >
-	<div class=" absolute text-white z-99999" style="top: {y + 10}px; left: {x + 10}px;">
+	<div class="absolute text-white z-99999 will-change-transform" style={transformStyle}>
 		<slot></slot>
 	</div>
 </div>

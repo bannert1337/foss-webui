@@ -48,6 +48,9 @@
 	let draggedOver = false;
 	let dragged = false;
 
+	// Add debounce for draggedOver state to prevent excessive re-renders
+	let dragOverDebounceTimeout;
+
 	let name = '';
 
 	const onDragOver = (e) => {
@@ -56,96 +59,114 @@
 		if (dragged || parentDragged) {
 			return;
 		}
-		draggedOver = true;
+
+		// Debounce the draggedOver state change
+		clearTimeout(dragOverDebounceTimeout);
+		dragOverDebounceTimeout = setTimeout(() => {
+			draggedOver = true;
+		}, 50);
 	};
 
 	const onDrop = async (e) => {
 		e.preventDefault();
 		e.stopPropagation();
+
+		// Clear any pending dragOver debounce
+		clearTimeout(dragOverDebounceTimeout);
+
 		if (dragged || parentDragged) {
 			return;
 		}
 
 		if (folderElement.contains(e.target)) {
-			console.log('Dropped on the Button');
-
+			// Process file drops
 			if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-				// Iterate over all items in the DataTransferItemList use functional programming
-				for (const item of Array.from(e.dataTransfer.items)) {
-					// If dropped items aren't files, reject them
-					if (item.kind === 'file') {
+				const items = Array.from(e.dataTransfer.items);
+
+				// Handle file drops
+				const fileItems = items.filter((item) => item.kind === 'file');
+				if (fileItems.length > 0) {
+					// Process only the first JSON file for better performance
+					for (const item of fileItems) {
 						const file = item.getAsFile();
 						if (file && file.type === 'application/json') {
-							console.log('Dropped file is a JSON file!');
-
 							// Read the JSON file with FileReader
 							const reader = new FileReader();
 							reader.onload = async function (event) {
 								try {
-									const fileContent = JSON.parse(event.target.result);
-									open = true;
-									dispatch('import', {
-										folderId: folderId,
-										items: fileContent
-									});
+									if (event.target && event.target.result) {
+										const fileContent = JSON.parse(event.target.result.toString());
+										open = true;
+										dispatch('import', {
+											folderId: folderId,
+											items: fileContent
+										});
+									}
 								} catch (error) {
 									console.error('Error parsing JSON file:', error);
+									toast.error($i18n.t('Error parsing JSON file'));
 								}
 							};
 
 							// Start reading the file
 							reader.readAsText(file);
-						} else {
-							console.error('Only JSON file types are supported.');
+							break; // Only process the first JSON file
 						}
-
-						console.log(file);
-					} else {
-						// Handle the drag-and-drop data for folders or chats (same as before)
+					}
+				} else {
+					// Handle drag-and-drop data for folders or chats
+					try {
 						const dataTransfer = e.dataTransfer.getData('text/plain');
-						const data = JSON.parse(dataTransfer);
-						console.log(data);
+						if (dataTransfer) {
+							const data = JSON.parse(dataTransfer);
+							const { type, id, item } = data;
 
-						const { type, id, item } = data;
-
-						if (type === 'folder') {
-							open = true;
-							if (id === folderId) {
-								return;
-							}
-							// Move the folder
-							const res = await updateFolderParentIdById(localStorage.token, id, folderId).catch(
-								(error) => {
-									toast.error(`${error}`);
-									return null;
+							if (type === 'folder') {
+								open = true;
+								if (id === folderId) {
+									draggedOver = false;
+									return;
 								}
-							);
+								// Move the folder
+								const res = await updateFolderParentIdById(localStorage.token, id, folderId).catch(
+									(error) => {
+										toast.error(`${error}`);
+										return null;
+									}
+								);
 
-							if (res) {
-								dispatch('update');
-							}
-						} else if (type === 'chat') {
-							open = true;
-
-							let chat = await getChatById(localStorage.token, id).catch((error) => {
-								return null;
-							});
-							if (!chat && item) {
-								chat = await importChat(localStorage.token, item.chat, item?.meta ?? {});
-							}
-
-							// Move the chat
-							const res = await updateChatFolderIdById(localStorage.token, chat.id, folderId).catch(
-								(error) => {
-									toast.error(`${error}`);
-									return null;
+								if (res) {
+									dispatch('update');
 								}
-							);
+							} else if (type === 'chat') {
+								open = true;
 
-							if (res) {
-								dispatch('update');
+								let chat = await getChatById(localStorage.token, id).catch((error) => {
+									return null;
+								});
+								if (!chat && item) {
+									chat = await importChat(localStorage.token, item.chat, item?.meta ?? {});
+								}
+
+								if (chat) {
+									// Move the chat
+									const res = await updateChatFolderIdById(
+										localStorage.token,
+										chat.id,
+										folderId
+									).catch((error) => {
+										toast.error(`${error}`);
+										return null;
+									});
+
+									if (res) {
+										dispatch('update');
+									}
+								}
 							}
 						}
+					} catch (error) {
+						console.error('Error processing drag data:', error);
 					}
 				}
 			}
@@ -160,19 +181,35 @@
 			return;
 		}
 
+		// Clear any pending dragOver debounce
+		clearTimeout(dragOverDebounceTimeout);
 		draggedOver = false;
 	};
 
-	const dragImage = new Image();
-	dragImage.src =
-		'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+	// Use a shared transparent drag image instead of creating one per component
+	// This is defined once and reused across all instances
+	const getDragImage = (() => {
+		let image;
+		return () => {
+			if (!image) {
+				image = new Image();
+				image.src =
+					'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+			}
+			return image;
+		};
+	})();
 
 	let x;
 	let y;
 
+	// Throttle the drag event to reduce DOM updates
+	let lastDragUpdate = 0;
+	const DRAG_THROTTLE = 50; // ms between updates
+
 	const onDragStart = (event) => {
 		event.stopPropagation();
-		event.dataTransfer.setDragImage(dragImage, 0, 0);
+		event.dataTransfer.setDragImage(getDragImage(), 0, 0);
 
 		// Set the data to be transferred
 		event.dataTransfer.setData(
@@ -184,12 +221,22 @@
 		);
 
 		dragged = true;
-		folderElement.style.opacity = '0.5'; // Optional: Visual cue to show it's being dragged
+		folderElement.style.opacity = '0.5'; // Visual cue to show it's being dragged
+
+		// Initialize drag position
+		x = event.clientX;
+		y = event.clientY;
+		lastDragUpdate = Date.now();
 	};
 
 	const onDrag = (event) => {
 		event.stopPropagation();
 
+		// Throttle updates to reduce DOM operations
+		const now = Date.now();
+		if (now - lastDragUpdate < DRAG_THROTTLE) return;
+
+		lastDragUpdate = now;
 		x = event.clientX;
 		y = event.clientY;
 	};

@@ -243,23 +243,57 @@
 	};
 
 	const inputFilesHandler = async (files) => {
-		console.log(files);
+		if (!files || files.length === 0) return;
 
-		for (const file of files) {
-			const reader = new FileReader();
-			reader.onload = async (e) => {
-				const content = e.target.result;
+		// Process files in batches to avoid blocking the UI
+		const BATCH_SIZE = 3;
+		const processFileBatch = async (startIndex) => {
+			const endIndex = Math.min(startIndex + BATCH_SIZE, files.length);
+			const promises = [];
 
-				try {
-					const chatItems = JSON.parse(content);
-					importChatHandler(chatItems);
-				} catch {
-					toast.error($i18n.t(`Invalid file format.`));
-				}
-			};
+			for (let i = startIndex; i < endIndex; i++) {
+				const file = files[i];
+				promises.push(
+					new Promise((resolve) => {
+						const reader = new FileReader();
+						reader.onload = async (e) => {
+							if (e.target && e.target.result) {
+								try {
+									const content = e.target.result.toString();
+									const chatItems = JSON.parse(content);
+									await importChatHandler(chatItems);
+									resolve(true);
+								} catch (error) {
+									console.error('Error parsing file:', error);
+									toast.error($i18n.t(`Invalid file format.`));
+									resolve(false);
+								}
+							} else {
+								resolve(false);
+							}
+						};
 
-			reader.readAsText(file);
-		}
+						reader.onerror = () => {
+							toast.error($i18n.t(`Error reading file.`));
+							resolve(false);
+						};
+
+						reader.readAsText(file);
+					})
+				);
+			}
+
+			await Promise.all(promises);
+
+			// Process next batch if there are more files
+			if (endIndex < files.length) {
+				// Use setTimeout to give the UI a chance to update
+				setTimeout(() => processFileBatch(endIndex), 0);
+			}
+		};
+
+		// Start processing the first batch
+		processFileBatch(0);
 	};
 
 	const tagEventHandler = async (type, tagName, chatId) => {
@@ -272,33 +306,46 @@
 	};
 
 	let draggedOver = false;
+	let dragOverDebounceTimeout;
 
 	const onDragOver = (e) => {
 		e.preventDefault();
 
 		// Check if a file is being draggedOver.
 		if (e.dataTransfer?.types?.includes('Files')) {
-			draggedOver = true;
+			// Debounce the draggedOver state change to prevent excessive re-renders
+			clearTimeout(dragOverDebounceTimeout);
+			dragOverDebounceTimeout = setTimeout(() => {
+				draggedOver = true;
+			}, 50);
 		} else {
+			clearTimeout(dragOverDebounceTimeout);
 			draggedOver = false;
 		}
 	};
 
 	const onDragLeave = () => {
+		clearTimeout(dragOverDebounceTimeout);
 		draggedOver = false;
 	};
 
 	const onDrop = async (e) => {
 		e.preventDefault();
-		console.log(e); // Log the drop event
+
+		// Clear any pending dragOver debounce
+		clearTimeout(dragOverDebounceTimeout);
 
 		// Perform file drop check and handle it accordingly
-		if (e.dataTransfer?.files) {
-			const inputFiles = Array.from(e.dataTransfer?.files);
+		if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+			const inputFiles = Array.from(e.dataTransfer.files);
 
-			if (inputFiles && inputFiles.length > 0) {
-				console.log(inputFiles); // Log the dropped files
-				inputFilesHandler(inputFiles); // Handle the dropped files
+			// Process only JSON files
+			const jsonFiles = inputFiles.filter(
+				(file) => file.type === 'application/json' || file.name.toLowerCase().endsWith('.json')
+			);
+
+			if (jsonFiles.length > 0) {
+				inputFilesHandler(jsonFiles);
 			}
 		}
 

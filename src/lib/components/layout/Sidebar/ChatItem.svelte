@@ -51,8 +51,12 @@
 
 	let mouseOver = false;
 	let draggable = false;
+
+	// Use a debounced version of loadChat to prevent excessive API calls
+	let loadChatTimeout;
 	$: if (mouseOver) {
-		loadChat();
+		clearTimeout(loadChatTimeout);
+		loadChatTimeout = setTimeout(loadChat, 150);
 	}
 
 	const loadChat = async () => {
@@ -143,14 +147,29 @@
 	let x = 0;
 	let y = 0;
 
-	const dragImage = new Image();
-	dragImage.src =
-		'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+	// Use a shared transparent drag image instead of creating one per component
+	// This is defined once and reused across all instances
+	const getDragImage = (() => {
+		let image;
+		return () => {
+			if (!image) {
+				image = new Image();
+				image.src =
+					'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+			}
+			return image;
+		};
+	})();
+
+	// Throttle the drag event to reduce DOM updates
+	let lastDragUpdate = 0;
+	const DRAG_THROTTLE = 50; // ms between updates
 
 	const onDragStart = (event) => {
 		event.stopPropagation();
 
-		event.dataTransfer.setDragImage(dragImage, 0, 0);
+		// Use the shared drag image
+		event.dataTransfer.setDragImage(getDragImage(), 0, 0);
 
 		// Set the data to be transferred
 		event.dataTransfer.setData(
@@ -163,12 +182,22 @@
 		);
 
 		dragged = true;
-		itemElement.style.opacity = '0.5'; // Optional: Visual cue to show it's being dragged
+		itemElement.style.opacity = '0.5'; // Visual cue to show it's being dragged
+
+		// Initialize drag position
+		x = event.clientX;
+		y = event.clientY;
+		lastDragUpdate = Date.now();
 	};
 
 	const onDrag = (event) => {
 		event.stopPropagation();
 
+		// Throttle updates to reduce DOM operations
+		const now = Date.now();
+		if (now - lastDragUpdate < DRAG_THROTTLE) return;
+
+		lastDragUpdate = now;
 		x = event.clientX;
 		y = event.clientY;
 	};
@@ -184,7 +213,7 @@
 		if (itemElement) {
 			// Event listener for when dragging starts
 			itemElement.addEventListener('dragstart', onDragStart);
-			// Event listener for when dragging occurs (optional)
+			// Event listener for when dragging occurs (throttled)
 			itemElement.addEventListener('drag', onDrag);
 			// Event listener for when dragging ends
 			itemElement.addEventListener('dragend', onDragEnd);
